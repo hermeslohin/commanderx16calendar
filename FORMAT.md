@@ -58,3 +58,19 @@ text (see SYNC-PLAN.md, "Preservation").
   The list shows events in **slot order**, not time order.
 * Hub convention for times: a description that starts with `HH:MM ` (24-hour, `H:MM` also
   accepted) is a timed event in America/New_York. Anything else is all-day.
+
+## Sync button (W7)
+
+`calendar.p8` now has **F1 = sync with ownCloud** and **F3 = conflicts** (help line on row 25).
+F1 saves CALENDAR.DAT, loads `X16LINK.BIN` (RAM bank 60) + `X16LINK.KEY` from the SD card, dials
+the hub, and runs the calendar channel (PROTOCOL.md 3.5, client `lib/x16link/x16cal.p8`). It saves
+the result to CALENDAR.DAT and then the hub's counter to **CALSYNC.DAT** (4 bytes LE, no PRG header).
+On any error it reloads CALENDAR.DAT and keeps the old counter. A missing or unreadable CALENDAR.DAT
+resets the counter to 0, so the next sync is a full, non-destructive one.
+Status line: `synced. out +created *updated -deleted  in N`, or `synced. conflicts: N - press f3.`
+Records with flag bit2 show `!` instead of `.` in the day list, and row 25 shows `!n`. F3 lists each
+conflict (date + text, which side changed what, the ownCloud value, which version was kept).
+**A** acknowledges all of them; the flag clears on the next sync.
+CALENDAR.DAT and CALSYNC.DAT are read with a hard size cap (an oversized file can't overrun memory).
+SD card for sync: `CALENDAR.PRG` (build/calendar.prg), `X16LINK.BIN`, `X16LINK.KEY`.
+Test: `~/x16-office/hub/.venv/bin/python selftest/run_caltest.py` (real ownCloud, W7TEST events, cleans up).

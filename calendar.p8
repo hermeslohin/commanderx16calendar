@@ -8,11 +8,18 @@
 ;        Ctrl+N / P   next / previous month   Ctrl+F / B  next / previous year
 ;        Ctrl+A       add event on selected day Ctrl+D     delete an event
 ;        Ctrl+T       jump to today (needs RTC) Ctrl+X     quit
+;        F1           sync with ownCloud (X16Link hub) F3   show sync conflicts
+;
+; Sync: needs X16LINK.BIN + X16LINK.KEY on the SD card and the TexElec serial/ESP32 card.
+; CALENDAR.DAT is saved before every sync; the hub's change counter is kept in CALSYNC.DAT
+; (4 bytes, written only after the synced CALENDAR.DAT is saved). Record flag bit2 = conflict.
 
 %import textio
 %import diskio
 %import syslib
 %import strings
+%import conv
+%import x16cal
 %zeropage basicsafe
 
 main {
@@ -23,6 +30,13 @@ main {
     const uword FILESZ = 4096       ; MAXEV * RECSZ
     str FILENAME = "calendar.dat"
     str SAVENAME = "@:calendar.dat"
+    str CNTNAME = "calsync.dat"
+    str CNTSAVE = "@:calsync.dat"
+    const ubyte F_CONFLICT = 4
+    ubyte[4] sync_counter
+    ubyte[2] sync_hdr
+    bool dat_loaded = false
+    str errbuf = " " * 64
 
     ; record layout: +0 used flag, +1 year-2000, +2 month, +3 day, +4.. text (0-terminated)
     uword events = memory("events", 4096, 0)
@@ -46,6 +60,7 @@ main {
         sys.memset(events, FILESZ, 0)
         get_today()
         load_events()
+        load_counter()
         main_loop()
         txt.clear_screen()
         txt.print("goodbye!\n")
@@ -68,6 +83,8 @@ main {
                 4 -> delete_event()             ; Ctrl+D
                 20 -> goto_today()              ; Ctrl+T
                 24 -> return                    ; Ctrl+X
+                133 -> sync_now()               ; F1
+                134 -> show_conflicts()         ; F3
             }
             draw_screen()
         }
@@ -233,8 +250,19 @@ main {
     }
 
     sub load_events() {
+        dat_loaded = false
         if diskio.exists(FILENAME) {
-            if diskio.load(FILENAME, events) == 0
+            ; at most 2 + 4096 bytes: an oversized file must not run past the events slab
+            sys.memset(events, FILESZ, 0)
+            bool ok = false
+            if diskio.f_open(FILENAME) {
+                ok = diskio.f_read(&sync_hdr, 2) == 2
+                if ok
+                    void diskio.f_read(events, FILESZ)
+                diskio.f_close()
+            }
+            dat_loaded = ok
+            if not ok
                 set_message("could not load calendar.dat!")
             else
                 set_message("loaded saved events.")
@@ -247,6 +275,174 @@ main {
             set_message("saved to calendar.dat.")
         else
             set_message("save failed! " + diskio.status())
+    }
+
+    ; ---------- ownCloud sync (X16Link calendar channel) ----------
+
+    sub load_counter() {
+        ; read at most 4 bytes (load_raw would load a long/odd file over whatever follows the array)
+        sys.memset(&sync_counter, 4, 0)
+        if not dat_loaded
+            return          ; no/unreadable CALENDAR.DAT: next sync is a full one (never a mass delete)
+        if diskio.f_open(CNTNAME) {
+            if diskio.f_read(&sync_counter, 4) != 4
+                sys.memset(&sync_counter, 4, 0)     ; damaged: full resync
+            diskio.f_close()
+        }
+    }
+
+    ; ISO-8859 text from the hub -> PETSCII for the lowercase charset
+    sub iso_to_pet(uword s) {
+        ubyte c
+        while @(s) != 0 {
+            c = @(s)
+            if c >= $41 and c <= $5a
+                @(s) = c + $80
+            else if c >= $61 and c <= $7a
+                @(s) = c - $20
+            else if c < 32 or c >= 127
+                @(s) = '?'
+            s++
+        }
+    }
+
+    sub add_num(str label, ubyte v) {
+        void strings.append(message, label)
+        void strings.append(message, conv.str_ub(v))
+    }
+
+    sub count_conflicts() -> ubyte {
+        ubyte n = 0
+        ubyte i
+        for i in 0 to MAXEV-1 {
+            if @(rec(i)) & F_CONFLICT != 0
+                n++
+        }
+        return n
+    }
+
+    sub sync_now() {
+        clear_prompt_rows()
+        txt.print("syncing with owncloud...")
+        if not diskio.save(SAVENAME, events, FILESZ) {
+            set_message("save failed - not syncing.")
+            return
+        }
+        if not lkload.load_link() {
+            set_message("x16link.bin missing on sd card.")
+            return
+        }
+        ubyte st = lkcal.sync(events, &sync_counter)
+        if st != 0 {
+            load_events()                       ; back to the saved state
+            if not dat_loaded
+                sys.memset(&sync_counter, 4, 0)
+            lkcal.get_error(errbuf, 30)
+            iso_to_pet(errbuf)
+            set_message("sync failed: ")
+            void strings.append(message, errbuf)
+            return
+        }
+        if not diskio.save(SAVENAME, events, FILESZ) {
+            load_events()
+            set_message("sync ok but save failed!")
+            return
+        }
+        if diskio.save_raw(CNTSAVE, &lkcal.new_counter, 4)
+            sys.memcopy(&lkcal.new_counter, &sync_counter, 4)
+        if lkcal.nconf != 0 {
+            set_message("synced. conflicts: ")
+            add_num("", lkcal.nconf)
+            void strings.append(message, " - press f3.")
+        } else {
+            set_message("synced. out +")
+            add_num("", lkcal.created)
+            add_num(" *", lkcal.updated)
+            add_num(" -", lkcal.deleted)
+            add_num("  in ", lkcal.received)
+        }
+    }
+
+    sub field_name(ubyte f) -> str {
+        when f {
+            0 -> return "event"
+            1 -> return "date"
+            2 -> return "time"
+        }
+        return "text"
+    }
+
+    sub show_conflicts() {
+        ubyte i
+        ubyte y
+        uword p
+        repeat {
+            txt.clear_screen()
+            txt.plot(GX, 0)
+            txt.print("SYNC CONFLICTS")
+            txt.plot(GX, 1)
+            txt.print("both sides changed; one version kept")
+            y = 3
+            if lkcal.nconf_got == 0 {
+                txt.plot(GX, y)
+                if count_conflicts() != 0
+                    txt.print("details: press f1 to sync first.")
+                else
+                    txt.print("no conflicts.")
+            } else {
+                for i in 0 to lkcal.nconf_got - 1 {
+                    if y > 24
+                        break
+                    txt.plot(GX, y)
+                    p = lkcal.conf_slot[i]
+                    if lsb(p) < MAXEV and @(rec(lsb(p))) != 0 {
+                        p = rec(lsb(p))
+                        txt.print_uw(2000 + @(p+1))
+                        txt.chrout('-')
+                        print_2d(@(p+2))
+                        txt.chrout('-')
+                        print_2d(@(p+3))
+                        txt.chrout(' ')
+                        txt.print(p + 4)
+                    } else
+                        txt.print("(event not on x16)")
+                    txt.plot(GX + 1, y + 1)
+                    when lkcal.conf_kind[i] {
+                        1 -> txt.print("deleted here, edited in owncloud:")
+                        2 -> txt.print("edited here, deleted in owncloud.")
+                        else -> {
+                            txt.print(field_name(lkcal.conf_field[i]))
+                            txt.print(" changed on both; owncloud had:")
+                        }
+                    }
+                    txt.plot(GX + 2, y + 2)
+                    if lkcal.conf_kind[i] != 2
+                        txt.print(lkcal.conf_text + (i as uword) * lkcal.CTXT)
+                    txt.plot(GX + 1, y + 3)
+                    if lkcal.conf_kept[i] == 0
+                        txt.print("kept: x16 version")
+                    else
+                        txt.print("kept: owncloud version")
+                    y += 5
+                }
+                if lkcal.nconf > lkcal.nconf_got {
+                    txt.plot(GX, 25)
+                    txt.print("(more on the hub: calsync conflicts)")
+                }
+            }
+            txt.plot(GX, 27)
+            txt.print("A=ACKNOWLEDGE ALL   ESC=BACK")
+            ubyte k = wait_key()
+            if k == 27 or k == 3 or k == 134
+                return
+            if k == 'a' or k == 'A' {
+                lkcal.ack_all()
+                lkcal.nconf_got = 0
+                lkcal.nconf = 0
+                set_message("acknowledged; cleared at next sync.")
+                return
+            }
+        }
     }
 
     sub set_message(str msg) {
@@ -461,7 +657,11 @@ main {
             if rec_matches(n, sel_year, sel_month, sel_day) and shown < MAXDAY {
                 txt.plot(GX + 1, 19 + shown)
                 txt.print_ub(shown + 1)
-                txt.print(". ")
+                if @(rec(n)) & F_CONFLICT != 0
+                    txt.print("!")
+                else
+                    txt.print(".")
+                txt.chrout(' ')
                 txt.print(rec(n) + 4)
                 shown++
             }
@@ -476,6 +676,13 @@ main {
         txt.print("CTRL+  A=ADD  D=DELETE  T=TODAY")
         txt.plot(GX, 27)
         txt.print("       N/P=MONTH  F/B=YEAR  X=QUIT")
+        txt.plot(GX, 25)
+        txt.print("F1=SYNC OWNCLOUD  F3=CONFLICTS")
+        ubyte nc = count_conflicts()
+        if nc != 0 {
+            txt.print(" !")
+            txt.print_ub(nc)
+        }
         txt.plot(GX, 29)
         txt.print(message)
         message[0] = 0
