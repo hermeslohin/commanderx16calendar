@@ -42,6 +42,11 @@ The engine already has these functions, so the wire layer only moves bytes:
 
 ## X16 app UI changes
 
+> Status: the app is now mouse driven (X16 Office look, see FORMAT.md). Items 2's `!` marks, 3, 4
+> (edit in place sets `$02`, also when an event is dragged to another day) and 5 (sorted day list)
+> are done. Still to do: the Sync button / key (1), the conflict detail box (2) and the hint (6).
+> The status bar is row 29 and messages go through `cv.set_status`.
+
 1. **Sync key: `Ctrl+S`** (shown in the help line as `S=SYNC`).
    * Save first, if dirty. Show `syncing...` in the message row (row 29).
    * Open the link (W5 `x16link`), send `CAL_SYNC` with all 128 slots + counter.

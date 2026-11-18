@@ -1,9 +1,8 @@
 # CALENDAR.DAT: record format and app features
 
-Source: `calendar.p8` (commit `5f5c6fb`, hermeslohin/commanderx16calendar).
-Built with our toolchain: `~/x16-office/tools/prog8c -target cx16 -out build calendar.p8`
-(Prog8 12.3.5, 1.0 s). `build/calendar.prg` is byte-identical to the committed `calendar.prg`
-(md5 `a9dda636…`). It needs no network and no extra libraries: `textio`, `diskio`, `syslib`, `strings`.
+Source: `caldata.p8` (records, dates, charset), with the UI in `calapp.p8` / `calview.p8`.
+Built with `make` (Prog8 12.3.5). The file format is the same as in the first, keyboard-only
+version (commit `5f5c6fb`), so files move freely between the two and the hub.
 
 ## File
 
@@ -32,15 +31,17 @@ user: `add_event` takes the **lowest free slot**, so delete + add on the same da
 
 ## Charset
 
-The app switches to the **lowercase/uppercase PETSCII** charset (`txt.lowercase()`), and the
-text bytes are raw PETSCII keyboard codes. `read_line` accepts `32..126` and `193..218`:
+The text bytes are PETSCII codes of the **lowercase/uppercase** charset. (The first version of the app
+ran in that charset and stored raw keyboard codes. The current, mouse-driven version draws an ISO
+bitmap screen like X16 Write / X16 Sheets and converts at the edges, `cal.to_iso` / `cal.to_pet` in
+`caldata.p8`, so the bytes on disk are unchanged.) Stored bytes are `32..64`, `[ ]`, `$41-$5A`, `$C1-$DA`, `£ ↑`:
 
 * `$41-$5A` show as **a-z** (unshifted letters), `$C1-$DA` as **A-Z** (shifted).
 * `$20-$40`, `[` `]` are ASCII-equal. `$5C`=£, `$5E`=↑, `$5F`=←.
 * `$60-$7E`: `$61-$7A` are C64 duplicates of A-Z and the rest are graphics glyphs. You can't
   type them normally. The hub never writes them.
-* No accents. **The app does not use ISO-8859-15 mode.** The hub's default charset is
-  therefore `petscii`. It also has an `iso-8859-15` codec in case the app ever calls `txt.iso()`.
+* No accents. **The file is not ISO-8859-15**, even though the screen is: the hub's default
+  charset stays `petscii`. Typed `\ { } | ~ _ ^ backtick` are folded the same way the hub folds them.
 
 Hub mapping: 1 Unicode char <-> 1 byte, always. Accents and lookalikes are folded
 (é→e, ß→s, €→E, curly quotes→straight, `\ { } | ~ _ ^ backtick` → `/ ( ) ! - - ↑ '`) and
@@ -49,12 +50,16 @@ text (see SYNC-PLAN.md, "Preservation").
 
 ## Features / limits (current app)
 
-* Month grid. Cursor keys move the day, Ctrl+N/P change month, Ctrl+F/B change year, Ctrl+T
-  goes to today (RTC) and Ctrl+X quits. A `*` marks days with events.
-* **Add** (Ctrl+A): a one-line editor with at most 27 chars and ENTER/ESC. At most
-  **6 events per day** (`MAXDAY`) and **128 in total** (`MAXEV`).
-* **Delete** (Ctrl+D then 1-9, effectively 1-6): sets byte +0 to 0. The rest of the bytes stay (stale).
-* **No edit**, **no times**, **no recurring events**, **no all-day/timed distinction**.
-  The list shows events in **slot order**, not time order.
+* Mouse driven, in the X16 Office style (title bar, icon toolbar with tool tips, entry bar, status bar).
+  Month grid with the first two events of each day (`+N more` after that) and the selected day's
+  list below. A red `!` marks days and events with a sync conflict (flag bit2).
+* **Add**: double-click a day or an empty list row, the New icon, or just type. **Edit**: double-click
+  an event, the Edit icon, or Return. Editing in place sets flag bit1 (`|= $02`), as SYNC-PLAN.md asks.
+  An empty text deletes the event. **Move**: drag an event onto another day (also sets bit1).
+  **Delete** (icon or Del, with a Yes/No box) sets byte +0 to 0; the rest of the bytes stay (stale).
+  Cut / Copy / Paste copy an event's text to the selected day (Paste creates a new event, flag 1).
+* At most **6 events per day** (`MAXDAY`) and **128 in total** (`MAXEV`). The UI navigates 2000..2200.
+* The day list is **sorted by text** (unsigned bytes), so `HH:MM ` times come first, all-day events after.
+* **No times as data**, **no recurring events**, **no all-day/timed distinction**: see the hub convention below.
 * Hub convention for times: a description that starts with `HH:MM ` (24-hour, `H:MM` also
   accepted) is a timed event in America/New_York. Anything else is all-day.
