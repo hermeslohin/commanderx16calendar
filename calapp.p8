@@ -9,6 +9,8 @@
 %import vid
 %import caldata
 %import calview
+%import conv
+%import x16cal
 
 app {
     bool running = true
@@ -26,6 +28,7 @@ app {
         txt.iso()
         cal.get_today()
         ubyte ok = cal.load_events()
+        cal.load_counter()
         vid.load_fonts()
         vid.gfx_init()
         cv.upload_icons()
@@ -338,8 +341,78 @@ app {
             }
             cv.B_PASTE -> paste_event()
             cv.B_TODAY, cv.B_PREVM, cv.B_NEXTM, cv.B_PREVY, cv.B_NEXTY -> nav(id)
+            cv.B_SYNC -> sync_now()
+            cv.B_CONF -> show_conflicts()
             cv.B_QUIT -> running = false
         }
+    }
+
+    ; ======================= ownCloud sync (X16Link calendar channel, hub PROTOCOL.md 3.5) =======================
+    ; Save CALENDAR.DAT, sync all 128 slots with the hub, save the result, then the hub's counter
+    ; (CALSYNC.DAT). Anything going wrong: reload the saved CALENDAR.DAT and keep the old counter
+    ; (every sync is idempotent on the hub, so the next one just repeats).
+    ubyte[64] serr
+    sub add_num(uword label, ubyte v) {
+        void strings.append(cv.status_msg, label)
+        void strings.append(cv.status_msg, conv.str_ub(v))
+    }
+
+    sub sync_now() {
+        status(iso:"Syncing with ownCloud...")
+        if not cal.save_events() {
+            status(iso:"Save failed - not syncing")
+            return
+        }
+        if not lkload.load_link() {
+            status(iso:"X16LINK.BIN is missing on the SD card (needed for Sync)")
+            return
+        }
+        ubyte st = lkcal.sync(cal.events, &cal.sync_counter)
+        if st != 0 {
+            void cal.load_events()                  ; back to the saved state
+            if not cal.dat_loaded
+                sys.memset(&cal.sync_counter, 4, 0)
+            lkcal.get_error(&serr, 50)
+            cv.set_status(iso:"Sync failed: ")
+            void strings.append(cv.status_msg, &serr)
+            refresh()
+            return
+        }
+        if not cal.save_events() {
+            void cal.load_events()
+            status(iso:"Synced, but saving CALENDAR.DAT failed - sync again")
+            refresh()
+            return
+        }
+        cal.dat_loaded = true
+        void cal.save_counter(&lkcal.new_counter)
+        if lkcal.nconf != 0 {
+            cv.set_status(iso:"Synced. Conflicts: ")
+            add_num(iso:"", lkcal.nconf)
+            void strings.append(cv.status_msg, iso:" - click the ! icon (F3)")
+        } else {
+            cv.set_status(iso:"Synced. Sent: +")
+            add_num(iso:"", lkcal.created)
+            add_num(iso:" changed ", lkcal.updated)
+            add_num(iso:" deleted ", lkcal.deleted)
+            add_num(iso:"  received ", lkcal.received)
+            if lkcal.unplaced != 0
+                add_num(iso:"  no room for ", lkcal.unplaced)
+        }
+        if cv.sel_ev != 255 and @(cal.rec(cv.sel_ev)) == 0
+            cv.sel_ev = 255
+        refresh()
+    }
+
+    sub show_conflicts() {
+        bool ack = cv.conflicts_dialog()
+        if ack {
+            lkcal.ack_all()
+            lkcal.nconf_got = 0
+            lkcal.nconf = 0
+            cv.set_status(iso:"Acknowledged: the marks clear at the next Sync")
+        }
+        cv.redraw_everything()
     }
 
     ; ======================= keyboard =======================
@@ -374,6 +447,8 @@ app {
             }
             8, 20, 25, 127 -> delete_event(true)
             24 -> running = false               ; Ctrl+X
+            133 -> sync_now()                   ; F1
+            134 -> show_conflicts()             ; F3
             else -> {
                 if (k >= 32 and k < 127) or k == 163
                     start_edit(255, k)

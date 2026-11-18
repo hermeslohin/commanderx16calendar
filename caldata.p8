@@ -266,14 +266,62 @@ cal {
         return false
     }
 
-    ; 0 = no file (new calendar), 1 = loaded, 2 = load error
+    ; 0 = no file (new calendar), 1 = loaded, 2 = load error.
+    ; Reads at most the 2-byte PRG header + 4096 bytes: an oversized file can't run past the slab.
+    bool dat_loaded                 ; CALENDAR.DAT was read: the sync counter may be trusted
+    ubyte[2] hdr
     sub load_events() -> ubyte {
         sys.memset(events, FILESZ, 0)
+        dat_loaded = false
         if not diskio.exists(FILENAME)
             return 0
-        if diskio.load(FILENAME, events) == 0
+        if not diskio.f_open(FILENAME)
             return 2
+        bool ok = diskio.f_read(&hdr, 2) == 2
+        if ok
+            void diskio.f_read(events, FILESZ)
+        diskio.f_close()
+        if not ok {
+            sys.memset(events, FILESZ, 0)
+            return 2
+        }
+        dat_loaded = true
         return 1
+    }
+
+    ; ---------- ownCloud sync counter (CALSYNC.DAT: 4 bytes, no header) ----------
+    str CNTNAME = iso:"CALSYNC.DAT"
+    str CNTSAVE = iso:"@:CALSYNC.DAT"
+    ubyte[4] sync_counter
+
+    ; read at most 4 bytes; 0 (= a full, non-destructive sync) if CALENDAR.DAT wasn't read or the
+    ; counter is missing / damaged
+    sub load_counter() {
+        sys.memset(&sync_counter, 4, 0)
+        if not dat_loaded
+            return
+        if diskio.f_open(CNTNAME) {
+            if diskio.f_read(&sync_counter, 4) != 4
+                sys.memset(&sync_counter, 4, 0)
+            diskio.f_close()
+        }
+    }
+
+    sub save_counter(uword c) -> bool {
+        if not diskio.save_raw(CNTSAVE, c, 4)
+            return false
+        sys.memcopy(c, &sync_counter, 4)
+        return true
+    }
+
+    sub count_conflicts() -> ubyte {
+        ubyte n = 0
+        ubyte i
+        for i in 0 to MAXEV - 1 {
+            if @(rec(i)) & F_CONFLICT != 0
+                n++
+        }
+        return n
     }
 
     sub save_events() -> bool {

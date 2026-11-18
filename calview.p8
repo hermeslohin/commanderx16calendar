@@ -2,7 +2,7 @@
 ; icons, title bar, tool tips in the status bar and dialogs).
 ;
 ;  row 0      title bar                                   (quit icon at the right)
-;  row 1      icon toolbar + month name
+;  row 1      icon toolbar (incl. ownCloud Sync and Conflicts) + month name
 ;  row 2      entry bar: date | cancel | accept | event text   (like Sheets' formula bar)
 ;  row 3      weekday headers
 ;  rows 4-21  month grid: 6 weeks x 3 rows (day number, 2 event lines), 7 columns of 11
@@ -50,6 +50,8 @@ cv {
     const ubyte B_QUIT = 12
     const ubyte B_ECANCEL = 13
     const ubyte B_EOK = 14
+    const ubyte B_SYNC = 15
+    const ubyte B_CONF = 16
 
     ubyte[24] bt_x
     ubyte[24] bt_y
@@ -199,12 +201,11 @@ cv {
 
     sub draw_toolbar() {
         rclear(0, vid.C_LGRAY)
-        ubyte x = rput(42, cal.names[cal.sel_month - 1], vid.C_BLACK, vid.C_LGRAY, vid.S_BOLD)
+        ubyte x = rput(49, cal.names[cal.sel_month - 1], vid.C_BLACK, vid.C_LGRAY, vid.S_BOLD)
         void rnum(x + 1, cal.sel_year, vid.C_BLACK, vid.C_LGRAY, vid.S_BOLD)
-        void rput(60, iso:"events", vid.C_DGRAY, vid.C_LGRAY, 0)
-        void rnum(67, cal.nused, vid.C_BLACK, vid.C_LGRAY, 0)
-        void rput(71, iso:"free", vid.C_DGRAY, vid.C_LGRAY, 0)
-        void rnum(76, cal.MAXEV - cal.nused, vid.C_BLACK, vid.C_LGRAY, 0)
+        void rput(66, iso:"events", vid.C_DGRAY, vid.C_LGRAY, 0)
+        x = rnum(73, cal.nused, vid.C_BLACK, vid.C_LGRAY, 0)
+        void rput(x, iso:"/128", vid.C_DGRAY, vid.C_LGRAY, 0)
         vid.render_run(TOOL, 0, 80)
         icon(1, TOOL, icons.I_ADD, B_ADD, editing and edit_slot == 255)
         icon(4, TOOL, icons.I_EDIT, B_EDIT, editing and edit_slot != 255)
@@ -217,6 +218,8 @@ cv {
         icon(31, TOOL, icons.I_PREVM, B_PREVM, false)
         icon(34, TOOL, icons.I_NEXTM, B_NEXTM, false)
         icon(37, TOOL, icons.I_NEXTY, B_NEXTY, false)
+        icon(42, TOOL, icons.I_SYNC, B_SYNC, false)
+        icon(45, TOOL, icons.I_CONF, B_CONF, cal.count_conflicts() != 0)
     }
 
     ; ---------------- entry bar ----------------
@@ -458,7 +461,9 @@ cv {
         iso:"Next year",
         iso:"Quit (events are saved after every change)",
         iso:"Cancel the entry (Esc)",
-        iso:"Save the entry (Return)" ]
+        iso:"Save the entry (Return)",
+        iso:"Sync with ownCloud through the X16 Office hub (F1)",
+        iso:"Sync conflicts: an event changed on both sides (F3)" ]
 
     sub show_tip(ubyte id) {
         if id >= len(tips)
@@ -522,6 +527,114 @@ cv {
                 if mouse_cx >= 24 and mouse_cx < 31
                     return true
                 if mouse_cx >= 46 and mouse_cx < 52
+                    return false
+            }
+        }
+    }
+
+    ; ---------------- sync conflicts ----------------
+    ubyte[40] cb
+    sub cb_add(uword src) {
+        ubyte n = strings.length(&cb)
+        while @(src) != 0 and n < 39 {
+            cb[n] = @(src)
+            n++
+            src++
+        }
+        cb[n] = 0
+    }
+
+    ; the conflicts of the last sync (lkcal.conf_*); true = acknowledge all. The caller redraws.
+    sub conflicts_dialog() -> bool {
+        const ubyte X = 4
+        const ubyte Y = 3
+        ubyte i
+        ubyte y = Y + 4
+        ubyte k
+        title_box(X, Y, 72, 24, iso:"Sync conflicts", vid.C_RED)
+        put(X + 2, Y + 2, iso:"These events changed on the X16 and in ownCloud since the last sync;", 0, vid.C_LGRAY)
+        put(X + 2, Y + 3, iso:"one version was kept. Acknowledge them to clear the red ! marks.", 0, vid.C_LGRAY)
+        if lkcal.nconf_got == 0 {
+            if cal.count_conflicts() != 0
+                put(X + 2, y + 1, iso:"Click Sync first: the details come from the hub.", vid.C_BLUE, vid.C_LGRAY)
+            else
+                put(X + 2, y + 1, iso:"No conflicts.", vid.C_BLUE, vid.C_LGRAY)
+        } else {
+            for i in 0 to lkcal.nconf_got - 1 {
+                if y > Y + 19
+                    break
+                ubyte slot = lkcal.conf_slot[i]
+                if slot < cal.MAXEV and @(cal.rec(slot)) != 0 {
+                    uword p = cal.rec(slot)
+                    ; "20YY-MM-DD"
+                    tb[0] = iso:'2'
+                    tb[1] = iso:'0'
+                    tb[2] = iso:'0' + @(p + 1) / 10
+                    tb[3] = iso:'0' + @(p + 1) % 10
+                    tb[4] = iso:'-'
+                    tb[5] = iso:'0' + @(p + 2) / 10
+                    tb[6] = iso:'0' + @(p + 2) % 10
+                    tb[7] = iso:'-'
+                    tb[8] = iso:'0' + @(p + 3) / 10
+                    tb[9] = iso:'0' + @(p + 3) % 10
+                    tb[10] = 0
+                    put(X + 2, y, &tb, vid.C_BLACK, vid.C_LGRAY)
+                    void cal.text_iso(slot, &tb, cal.TXTMAX)
+                    put(X + 14, y, &tb, vid.C_BLUE, vid.C_LGRAY)
+                } else
+                    put(X + 2, y, iso:"(an event that is not on the X16)", vid.C_BLACK, vid.C_LGRAY)
+                cb[0] = 0
+                when lkcal.conf_kind[i] {
+                    1 -> cb_add(iso:"deleted here, edited in ownCloud: ")
+                    2 -> cb_add(iso:"edited here, deleted in ownCloud")
+                    else -> {
+                        when lkcal.conf_field[i] {
+                            0 -> cb_add(iso:"event")
+                            1 -> cb_add(iso:"date")
+                            2 -> cb_add(iso:"time")
+                            else -> cb_add(iso:"text")
+                        }
+                        cb_add(iso:" changed on both; ownCloud had: ")
+                    }
+                }
+                put(X + 4, y + 1, &cb, vid.C_DGRAY, vid.C_LGRAY)
+                if lkcal.conf_kind[i] != 2 {
+                    ; the ownCloud value (PETSCII) -> ISO
+                    uword t = lkcal.conf_text + (i as uword) * lkcal.CTXT
+                    k = 0
+                    while @(t + k) != 0 and k < 27 {
+                        tb[k] = cal.to_iso(@(t + k))
+                        k++
+                    }
+                    tb[k] = 0
+                    put(X + 4 + strings.length(&cb), y + 1, &tb, vid.C_BLACK, vid.C_LGRAY)
+                }
+                if lkcal.conf_kept[i] == 0
+                    put(X + 56, y, iso:"kept: X16", vid.C_RED, vid.C_LGRAY)
+                else
+                    put(X + 56, y, iso:"kept: ownCloud", vid.C_RED, vid.C_LGRAY)
+                y += 2
+            }
+            if lkcal.nconf > lkcal.nconf_got
+                put(X + 2, Y + 20, iso:"(more on the hub: python -m x16hub.calsync conflicts)", vid.C_DGRAY, vid.C_LGRAY)
+        }
+        put(X + 2, Y + 22, iso:"[Acknowledge all]", 0, vid.C_WHITE)
+        put(X + 22, Y + 22, iso:"[ Close ]", 0, vid.C_WHITE)
+        prev_btn = true
+        repeat {
+            k = click()
+            if k == 2
+                return false
+            if k == 3 {
+                if last_key | 32 == iso:'a'
+                    return true
+                if last_key == 13 or last_key == 134
+                    return false
+            }
+            if k == 1 and mouse_cy == Y + 22 {
+                if mouse_cx >= X + 2 and mouse_cx < X + 19
+                    return true
+                if mouse_cx >= X + 22 and mouse_cx < X + 31
                     return false
             }
         }

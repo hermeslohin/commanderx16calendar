@@ -5,7 +5,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 B="$HERE/build/uitest"
 mkdir -p "$B/sd"
-${PROG8C:-java -jar $HOME/prog8c.jar} -target cx16 -srcdirs "$HERE" -out "$B" "$HERE/test/uitest.p8" > "$B/uitest.log" 2>&1 || { cat "$B/uitest.log"; exit 1; }
+${PROG8C:-java -jar $HOME/prog8c.jar} -target cx16 -srcdirs "$HERE" -srcdirs "$HERE/lib/x16link" -out "$B" "$HERE/test/uitest.p8" > "$B/uitest.log" 2>&1 || { cat "$B/uitest.log"; exit 1; }
 cp "$B/uitest.prg" "$B/sd/UITEST.PRG"
 rm -f "$B/sd/CALENDAR.DAT" "$B/sd/SHOT.BIN"
 "$HERE/test/runemu.sh" "$B/sd/UITEST.PRG" "$B/uitest.out" 120

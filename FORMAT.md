@@ -63,3 +63,20 @@ text (see SYNC-PLAN.md, "Preservation").
 * **No times as data**, **no recurring events**, **no all-day/timed distinction**: see the hub convention below.
 * Hub convention for times: a description that starts with `HH:MM ` (24-hour, `H:MM` also
   accepted) is a timed event in America/New_York. Anything else is all-day.
+
+## Sync with ownCloud
+
+The **Sync** icon (cloud, F1) saves CALENDAR.DAT, loads `X16LINK.BIN` (RAM bank 60) + `X16LINK.KEY`
+from the SD card, dials the hub, and runs the calendar channel (hub PROTOCOL.md 3.5, client
+`lib/x16link/x16cal.p8`). It saves the result to CALENDAR.DAT and then the hub's counter to
+**CALSYNC.DAT** (4 bytes LE, no PRG header). On any error it reloads CALENDAR.DAT and keeps the old
+counter. A missing or unreadable CALENDAR.DAT resets the counter to 0, so the next sync is a full,
+non-destructive one.
+Status bar: `Synced. Sent: +created changed n deleted n  received n`, or `Synced. Conflicts: n`.
+Records with flag bit2 show a red `!` in the grid and the day list, and the **Conflicts** icon
+(warning sign, F3) is highlighted. It lists each conflict (date + text, which side changed what, the
+ownCloud value, which version was kept); **Acknowledge all** (or A) clears the flags on the next sync.
+CALENDAR.DAT and CALSYNC.DAT are read with a hard size cap (an oversized file can't overrun memory).
+SD card for sync: `CALENDAR.PRG` (build/calendar.prg), `X16LINK.BIN`, `X16LINK.KEY`.
+Test: `make cloudtest` (the app's sync code in x16emu with the virtual modem against the hub's link
+server, its real sync engine and an in-memory CalDAV calendar; needs ../x16-office-hub and its venv).
