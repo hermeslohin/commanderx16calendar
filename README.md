@@ -48,3 +48,13 @@ clears the marks at the next Sync. Details: `FORMAT.md` (CALENDAR.DAT, CALSYNC.D
   venv): push, pull, the hub counter, a conflict, acknowledging it, reload.
 
 `CALENDAR.DAT` in the repo is a one-event sample.
+
+## License
+
+Copyright (C) 2026 hermeslohin
+
+X16 Calendar is free software: you can redistribute it and/or modify it under the terms of the GNU General
+Public License as published by the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See [LICENSE](LICENSE) for the full text of the GNU General Public License v3.
