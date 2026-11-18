@@ -7,6 +7,7 @@
 %import strings
 %import diskio
 %import vid
+%import theme
 %import caldata
 %import calview
 %import conv
@@ -32,6 +33,7 @@ app {
         vid.load_fonts()
         vid.gfx_init()
         cv.upload_icons()
+        theme.init()
         cal.scan_month()
         when ok {
             0 -> cv.set_status(iso:"No CALENDAR.DAT yet - starting a new calendar. Click a day, then type.")
@@ -41,9 +43,11 @@ app {
         cv.redraw_everything()
         while running {
             sys.waitvsync()
+            theme.tick()
             handle_keys()
             handle_mouse()
         }
+        theme.off()
         vid.gfx_off()
     }
 
@@ -53,9 +57,10 @@ app {
     }
 
     sub save() {
-        if cal.save_events()
+        if cal.save_events() {
             cv.set_status(iso:"Saved to CALENDAR.DAT")
-        else {
+            theme.cheer()
+        } else {
             cv.set_status(iso:"Save failed! ")
             void strings.append(cv.status_msg, diskio.status())
         }
@@ -402,6 +407,7 @@ app {
         if cv.sel_ev != 255 and @(cal.rec(cv.sel_ev)) == 0
             cv.sel_ev = 255
         refresh()
+        theme.cheer()
     }
 
     sub show_conflicts() {

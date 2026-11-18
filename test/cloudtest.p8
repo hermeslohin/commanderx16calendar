@@ -48,6 +48,7 @@ main {
         vid.load_fonts()
         vid.gfx_init()
         cv.upload_icons()
+        theme.init()
         app.select_day(2026, 11, 20)
         cv.redraw_everything()
 

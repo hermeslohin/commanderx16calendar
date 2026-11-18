@@ -4,6 +4,12 @@ Part of the X16 Office suite, with the look of X16 Write and X16 Sheets: month v
 events per day in the grid, the selected day's events below, and **Sync** with an ownCloud (CalDAV)
 calendar through the X16 Office sync hub.
 
+It wears the suite's "Sunset Arcade" colours (`theme.p8`, the same file in every X16 Office app):
+a pink/orange striped title bar, a plum toolbar with coloured icons, cream day cells on a starry
+night desk, today in yellow, the selected day and event in pink, events as coloured chips. Quill,
+a little pencil, sits at the left end of the status bar and hops after a save or a successful Sync.
+CALENDAR.DAT is unchanged.
+
 Build: `make` (Prog8 12.3.x as `~/prog8c.jar` or `PROG8C=...`, 64tass, Java 11+). That gives
 `build/calendar.prg` and `build/x16link.bin`; the X16Link sources are vendored in `lib/x16link/`
 (see `lib/x16link/VENDORED.md`). `make sd SD=<dir>` copies `CALENDAR.PRG` and `X16LINK.BIN`.

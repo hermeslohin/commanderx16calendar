@@ -6,7 +6,7 @@ PROG8C ?= java -jar $(HOME)/prog8c.jar
 X16EMU ?= /usr/local/x16emu/x16emu
 LIB    ?= lib/x16link
 P8      = $(PROG8C) -target cx16 -srcdirs $(LIB) -out build
-SRC     = calendar.p8 calapp.p8 calview.p8 caldata.p8 vid.p8 icons.p8
+SRC     = calendar.p8 calapp.p8 calview.p8 caldata.p8 vid.p8 icons.p8 theme.p8
 
 .PHONY: all run run-modem sd test cloudtest clean
 

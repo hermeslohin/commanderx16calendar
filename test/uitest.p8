@@ -65,6 +65,7 @@ main {
         vid.load_fonts()
         vid.gfx_init()
         cv.upload_icons()
+        theme.init()
         cal.today_year = 2026
         cal.today_month = 11
         cal.today_day = 18
