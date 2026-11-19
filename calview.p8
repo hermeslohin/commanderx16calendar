@@ -1,7 +1,9 @@
 ; calview.p8 - X16 Calendar's screen, in the style of X16 Write / X16 Sheets (same renderer, colours,
-; icons, title bar, tool tips in the status bar and dialogs), in the "Sunset Arcade" theme (theme.p8):
-; stripes title bar, plum toolbar with coloured icon faces, cream day cells on the starry desk,
-; pink selection, Quill the pencil at the left end of the status bar.
+; icons, title bar, tool tips in the status bar and dialogs), in the X16 Office themes (theme.p8):
+; the chrome (title bar, toolbar, entry bar, headers, status bar, dialogs, the desk) takes its
+; colours from theme.rl[]; the calendar's own colours (today yellow, the selected day red, other
+; months light grey, event chips, conflicts, the drop target) are palette indexes, which keep their
+; meaning in every theme. Quill sits at the left end of the status bar: clicking it = next theme.
 ;
 ;  row 0      title bar                                   (quit icon at the right)
 ;  row 1      icon toolbar (incl. ownCloud Sync and Conflicts) + month name
@@ -84,9 +86,9 @@ cv {
     }
 
     ; ---------------- row composition ----------------
-    sub rclear(ubyte fg, ubyte bg) {
+    ; a blank row in colour pair k
+    sub rclear(ubyte k) {
         ubyte x
-        ubyte k = (bg << 4) | fg
         for x in 0 to 79 {
             vid.r_ch[x] = 32
             vid.r_sty[x] = 0
@@ -94,23 +96,14 @@ cv {
         }
     }
 
-    ; starry desk in columns x0..x1 of the row buffer (the same pattern as theme.desk())
-    sub rdesk(ubyte x0, ubyte x1, ubyte row) {
-        ubyte x
-        ubyte h
-        for x in x0 to x1 {
-            h = (x * 7 + row * 13) & 31
-            vid.r_ch[x] = 32
-            vid.r_sty[x] = 0
-            vid.r_col[x] = (vid.C_BLACK << 4) | vid.C_GRAY
-            if h == 3 {
-                vid.r_ch[x] = theme.G_STAR2
-                vid.r_sty[x] = theme.S_THEME
-            } else if h == 11 or h == 22 {
-                vid.r_ch[x] = theme.G_STAR
-                vid.r_sty[x] = theme.S_THEME
-            }
-        }
+    ; the theme's desk across the whole row buffer
+    sub rdesk(ubyte row) {
+        theme.desk_fill(0, row, 80)
+    }
+
+    ; colour role r of the theme (a pair is (bg << 4) | fg)
+    sub role(ubyte r) -> ubyte {
+        return theme.rl[r]
     }
 
     ; blank cells (no desk stars) in columns x0..x1 of the row buffer
@@ -131,14 +124,23 @@ cv {
     }
 
     sub rcol(ubyte x0, ubyte x1, ubyte fg, ubyte bg) {
+        rcolk(x0, x1, (bg << 4) | fg)
+    }
+
+    ; colour pair k on columns x0..x1
+    sub rcolk(ubyte x0, ubyte x1, ubyte k) {
         ubyte x
         for x in x0 to x1
-            vid.r_col[x] = (bg << 4) | fg
+            vid.r_col[x] = k
     }
 
     ; put a 0-terminated ISO string; returns the column after it
     sub rput(ubyte x, uword s, ubyte fg, ubyte bg, ubyte sty) -> ubyte {
-        ubyte k = (bg << 4) | fg
+        return rputk(x, s, (bg << 4) | fg, sty)
+    }
+
+    ; the same in colour pair k
+    sub rputk(ubyte x, uword s, ubyte k, ubyte sty) -> ubyte {
         while @(s) != 0 and x < 80 {
             vid.r_ch[x] = @(s)
             vid.r_sty[x] = (vid.r_sty[x] & $c0) | sty
@@ -189,14 +191,14 @@ cv {
         }
     }
 
-    ; an icon cell pair: glyph fg on face
-    sub icon(ubyte col, ubyte row, ubyte k, ubyte id, ubyte fg, ubyte face) {
+    ; an icon cell pair: kc = (face << 4) | glyph colour
+    sub icon(ubyte col, ubyte row, ubyte k, ubyte id, ubyte kc) {
         vid.r_ch[0] = k * 2
         vid.r_ch[1] = k * 2 + 1
         vid.r_sty[0] = vid.S_RAW | $30
         vid.r_sty[1] = vid.S_RAW | $30
-        vid.r_col[0] = (face << 4) | fg
-        vid.r_col[1] = (face << 4) | fg
+        vid.r_col[0] = kc
+        vid.r_col[1] = kc
         vid.render_run(row, col, 2)
         add_btn(col, row, id)
     }
@@ -229,81 +231,92 @@ cv {
     ; ---------------- title bar and toolbar ----------------
     sub draw_title() {
         theme.stripes(0, 0, 80)
-        vid.text(1, 0, iso:" X16 CALENDAR ", vid.S_BOLD, vid.C_YELLOW, vid.C_BLACK)
-        vid.text(16, 0, iso:" ", 0, vid.C_WHITE, vid.C_BLACK)
-        vid.text(17, 0, cal.FILENAME, 0, vid.C_WHITE, vid.C_BLACK)
-        vid.text(29, 0, iso:" ", 0, vid.C_WHITE, vid.C_BLACK)
-        icon(77, 0, icons.I_QUIT, B_QUIT, vid.C_BLACK, vid.C_RED)
+        ubyte k = role(theme.R_TTL_NAME)
+        vid.text(1, 0, iso:" X16 CALENDAR ", vid.S_BOLD, k & 15, k >> 4)
+        k = role(theme.R_TTL_TXT)
+        vid.text(16, 0, iso:" ", 0, k & 15, k >> 4)
+        vid.text(17, 0, cal.FILENAME, 0, k & 15, k >> 4)
+        vid.text(29, 0, iso:" ", 0, k & 15, k >> 4)
+        icon(77, 0, icons.I_QUIT, B_QUIT, role(theme.R_QUIT))
     }
 
-    ; a violet toolbar icon, or BLACK on YELLOW while it is "on"
+    ; a toolbar icon with the theme's normal face, or its "on" face
     sub tool(ubyte col, ubyte k, ubyte id, bool on) {
         if on
-            icon(col, TOOL, k, id, vid.C_BLACK, vid.C_YELLOW)
+            icon(col, TOOL, k, id, role(theme.R_BTN_ON))
         else
-            icon(col, TOOL, k, id, vid.C_WHITE, vid.C_GRAY)
+            icon(col, TOOL, k, id, role(theme.R_BTN))
     }
 
     sub draw_toolbar() {
-        rclear(vid.C_WHITE, vid.C_DGRAY)
         ; the month name on the desk right of the icons
-        rdesk(48, 79, TOOL)
-        ubyte x = rput(49, iso:" ", vid.C_YELLOW, vid.C_BLACK, 0)
-        x = rput(x, cal.names[cal.sel_month - 1], vid.C_YELLOW, vid.C_BLACK, vid.S_BOLD)
-        x = rput(x, iso:" ", vid.C_YELLOW, vid.C_BLACK, 0)
-        x = rnum(x, cal.sel_year, vid.C_YELLOW, vid.C_BLACK, vid.S_BOLD)
-        void rput(x, iso:" ", vid.C_YELLOW, vid.C_BLACK, 0)
-        void rput(66, iso:"events", vid.C_LGRAY, vid.C_BLACK, 0)
-        x = rnum(73, cal.nused, vid.C_WHITE, vid.C_BLACK, 0)
-        void rput(x, iso:"/128", vid.C_LGRAY, vid.C_BLACK, 0)
+        rdesk(TOOL)
+        rblank(0, 47)
+        rcolk(0, 47, role(theme.R_TOOL) << 4)
+        ubyte k = role(theme.R_TTL_NAME)
+        ubyte x = rputk(49, iso:" ", k, 0)
+        x = rputk(x, cal.names[cal.sel_month - 1], k, vid.S_BOLD)
+        x = rputk(x, iso:" ", k, 0)
+        x = rnum(x, cal.sel_year, k & 15, k >> 4, vid.S_BOLD)
+        void rputk(x, iso:" ", k, 0)
+        ; the event count in the title bar's text colours (the labels dimmed: light grey for white)
+        k = role(theme.R_TTL_TXT)
+        ubyte lk = k
+        if k & 15 == vid.C_WHITE
+            lk = (k & $f0) | vid.C_LGRAY
+        void rputk(66, iso:"events", lk, 0)
+        x = rnum(73, cal.nused, k & 15, k >> 4, 0)
+        void rputk(x, iso:"/128", lk, 0)
         vid.render_run(TOOL, 0, 80)
         if editing and edit_slot == 255
-            icon(1, TOOL, icons.I_ADD, B_ADD, vid.C_BLACK, vid.C_YELLOW)
+            icon(1, TOOL, icons.I_ADD, B_ADD, role(theme.R_BTN_ON))
         else
-            icon(1, TOOL, icons.I_ADD, B_ADD, vid.C_BLACK, vid.C_RED)
+            icon(1, TOOL, icons.I_ADD, B_ADD, role(theme.R_BTN_1))
         tool(4, icons.I_EDIT, B_EDIT, editing and edit_slot != 255)
         tool(7, icons.I_DEL, B_DEL, false)
         tool(12, icons.I_CUT, B_CUT, false)
         tool(15, icons.I_COPY, B_COPY, false)
         tool(18, icons.I_PASTE, B_PASTE, clip_len != 0)
-        icon(23, TOOL, icons.I_TODAY, B_TODAY, vid.C_BLACK, vid.C_YELLOW)
+        icon(23, TOOL, icons.I_TODAY, B_TODAY, role(theme.R_BTN_4))
         tool(28, icons.I_PREVY, B_PREVY, false)
         tool(31, icons.I_PREVM, B_PREVM, false)
         tool(34, icons.I_NEXTM, B_NEXTM, false)
         tool(37, icons.I_NEXTY, B_NEXTY, false)
-        icon(42, TOOL, icons.I_SYNC, B_SYNC, vid.C_BLACK, vid.C_CYAN)
+        icon(42, TOOL, icons.I_SYNC, B_SYNC, role(theme.R_BTN_3))
         if cal.count_conflicts() != 0
-            icon(45, TOOL, icons.I_CONF, B_CONF, vid.C_BLACK, vid.C_RED)
+            icon(45, TOOL, icons.I_CONF, B_CONF, role(theme.R_BTN_1))
         else
-            icon(45, TOOL, icons.I_CONF, B_CONF, vid.C_DGRAY, vid.C_GRAY)
+            icon(45, TOOL, icons.I_CONF, B_CONF, role(theme.R_BTN_OFF))
     }
 
     ; ---------------- entry bar ----------------
     sub draw_ebar() {
         ubyte i
-        rclear(vid.C_BLACK, vid.C_LGRAY)
-        rcol(0, 11, vid.C_BLACK, vid.C_WHITE)
+        ubyte bk = role(theme.R_BAR)
+        ubyte fk = role(theme.R_FIELD)
+        rclear(bk)
+        rcolk(0, 11, fk)
         date_str()
-        void rput(1, &tb, vid.C_BLACK, vid.C_WHITE, 0)
-        rcol(EDX, EDX + EDW - 1, vid.C_BLACK, vid.C_WHITE)
+        void rputk(1, &tb, fk, 0)
+        rcolk(EDX, EDX + EDW - 1, fk)
         if editing {
             for i in 0 to elen {
                 if i < elen
                     vid.r_ch[EDX + 1 + i] = ebuf[i]
             }
-            vid.r_col[EDX + 1 + ecur] = vid.C_WHITE         ; cursor: black block
+            vid.r_col[EDX + 1 + ecur] = (fk << 4) | (fk >> 4)       ; cursor: an inverted block
             if edit_slot == 255
-                void rput(EDX + EDW + 1, iso:"New:", vid.C_BLACK, vid.C_LGRAY, vid.S_BOLD)
+                void rputk(EDX + EDW + 1, iso:"New:", bk, vid.S_BOLD)
             else
-                void rput(EDX + EDW + 1, iso:"Edit:", vid.C_BLACK, vid.C_LGRAY, vid.S_BOLD)
-            void rput(EDX + EDW + 7, iso:"Return=save, Esc=cancel", vid.C_DGRAY, vid.C_LGRAY, 0)
+                void rputk(EDX + EDW + 1, iso:"Edit:", bk, vid.S_BOLD)
+            void rputk(EDX + EDW + 7, iso:"Return=save, Esc=cancel", (bk & $f0) | role(theme.R_BAR_DIM), 0)
         } else if sel_ev != 255 {
             i = cal.text_iso(sel_ev, &tb, cal.TXTMAX)
-            void rput(EDX + 1, &tb, vid.C_BLACK, vid.C_WHITE, 0)
+            void rputk(EDX + 1, &tb, fk, 0)
         }
         vid.render_run(EBAR, 0, 80)
-        icon(13, EBAR, icons.I_QUIT, B_ECANCEL, vid.C_BLACK, vid.C_RED)
-        icon(16, EBAR, icons.I_OK, B_EOK, vid.C_BLACK, vid.C_GREEN)
+        icon(13, EBAR, icons.I_QUIT, B_ECANCEL, (vid.C_RED << 4) | vid.C_BLACK)
+        icon(16, EBAR, icons.I_OK, B_EOK, (vid.C_GREEN << 4) | vid.C_BLACK)
     }
 
     ; ---------------- month grid ----------------
@@ -338,19 +351,19 @@ cv {
 
     sub draw_header() {
         ubyte c
-        rdesk(0, 79, HDR)
+        rdesk(HDR)
         ubyte sc = cal.day_of_week(cal.sel_year, cal.sel_month, cal.sel_day)
         for c in 0 to 6 {
             ubyte x = GXL + c * CW
-            ubyte bg = vid.C_YELLOW
+            ubyte k = role(theme.R_TAPE)
             if c == 0 or c == 6
-                bg = vid.C_ORANGE
+                k = role(theme.R_TAPE_ALT)
             if c == sc
-                bg = vid.C_RED
+                k = (vid.C_RED << 4) | vid.C_BLACK      ; the selected day's weekday: red as the day
             rblank(x, x + CW - 1)
-            rcol(x, x + CW - 1, vid.C_BLACK, bg)
+            rcolk(x, x + CW - 1, k)
             vid.r_sty[x + CW - 1] = vid.S_GRIDR
-            void rput(x + 4, cal.dow_short[c], vid.C_BLACK, bg, vid.S_BOLD)
+            void rputk(x + 4, cal.dow_short[c], k, vid.S_BOLD)
         }
         vid.render_run(HDR, 0, 80)
     }
@@ -375,7 +388,7 @@ cv {
         ubyte c
         ubyte x
         ubyte i
-        rdesk(0, 79, GRID0 + sr)
+        rdesk(GRID0 + sr)
         for c in 0 to 6 {
             x = GXL + c * CW
             rblank(x, x + CW - 1)
@@ -470,22 +483,26 @@ cv {
 
     ; ---------------- selected day ----------------
     sub draw_dayhdr() {
-        ; the selected day's card: a pink header on the desk
-        rdesk(0, 79, DAYHDR)
+        ; the selected day's card: the theme's card header on the desk
+        rdesk(DAYHDR)
         rblank(GXL, GXR - 1)
-        rcol(GXL, GXR - 1, vid.C_BLACK, vid.C_RED)
-        ubyte x = rput(2, cal.dow_long[cal.day_of_week(cal.sel_year, cal.sel_month, cal.sel_day)], vid.C_BLACK, vid.C_RED, vid.S_BOLD)
-        x = rput(x, iso:", ", vid.C_BLACK, vid.C_RED, vid.S_BOLD)
-        x = rput(x, cal.names[cal.sel_month - 1], vid.C_BLACK, vid.C_RED, vid.S_BOLD)
-        x = rput(x + 1, conv.str_ub(cal.sel_day), vid.C_BLACK, vid.C_RED, vid.S_BOLD)
-        x = rput(x, iso:", ", vid.C_BLACK, vid.C_RED, vid.S_BOLD)
-        void rnum(x, cal.sel_year, vid.C_BLACK, vid.C_RED, vid.S_BOLD)
+        ubyte k = role(theme.R_HEAD_ON)
+        rcolk(GXL, GXR - 1, k)
+        ubyte x = rputk(2, cal.dow_long[cal.day_of_week(cal.sel_year, cal.sel_month, cal.sel_day)], k, vid.S_BOLD)
+        x = rputk(x, iso:", ", k, vid.S_BOLD)
+        x = rputk(x, cal.names[cal.sel_month - 1], k, vid.S_BOLD)
+        x = rputk(x + 1, conv.str_ub(cal.sel_day), k, vid.S_BOLD)
+        x = rputk(x, iso:", ", k, vid.S_BOLD)
+        void rnum(x, cal.sel_year, k & 15, k >> 4, vid.S_BOLD)
+        ; the count: white on a red header, else in the header's text colour
+        if k >> 4 == vid.C_RED
+            k = (vid.C_RED << 4) | vid.C_WHITE
         ubyte n = cal.day_cnt[cal.sel_day]
-        x = rnum(64, n, vid.C_WHITE, vid.C_RED, vid.S_BOLD)
+        x = rnum(64, n, k & 15, k >> 4, vid.S_BOLD)
         if n == 1
-            void rput(x + 1, iso:"event", vid.C_WHITE, vid.C_RED, 0)
+            void rputk(x + 1, iso:"event", k, 0)
         else
-            void rput(x + 1, iso:"events", vid.C_WHITE, vid.C_RED, 0)
+            void rputk(x + 1, iso:"events", k, 0)
         vid.render_run(DAYHDR, 0, 80)
     }
 
@@ -498,15 +515,16 @@ cv {
     sub draw_list_row(ubyte i) {
         ubyte x
         ubyte n = cal.day_cnt[cal.sel_day]
-        rdesk(0, 79, LIST0 + i)
+        ubyte pk = role(theme.R_PAPER)
+        rdesk(LIST0 + i)
         for x in GXL to GXR - 1 {
             vid.r_ch[x] = 32
             vid.r_sty[x] = vid.S_GRIDB
         }
-        rcol(GXL, GXR - 1, vid.C_BLACK, vid.C_WHITE)
+        rcolk(GXL, GXR - 1, pk)
         if i < n {
             ubyte slot = cal.event_of(cal.sel_day, i)
-            ubyte bg = vid.C_WHITE
+            ubyte bg = pk >> 4
             if slot == sel_ev
                 bg = vid.C_RED
             if editing and slot == edit_slot
@@ -520,7 +538,7 @@ cv {
             void rput(LTX, &tb, vid.C_BLACK, bg, 0)
             if @(cal.rec(slot)) & cal.F_CONFLICT != 0 {
                 ubyte cfg = vid.C_RED
-                if bg != vid.C_WHITE
+                if bg != pk >> 4
                     cfg = vid.C_BLACK
                 void rput(LTX + 30, iso:"! sync conflict - see ownCloud", cfg, bg, vid.S_BOLD)
             }
@@ -529,9 +547,9 @@ cv {
             void rput(LTX, iso:"(new event - type in the bar at the top)", vid.C_BROWN, vid.C_YELLOW, vid.S_ITAL)
         } else if i == n and n < cal.MAXDAY {
             if n == 0
-                void rput(LTX, iso:"No events. Double-click here, or just start typing, to add one.", vid.C_GRAY, vid.C_WHITE, 0)
+                void rput(LTX, iso:"No events. Double-click here, or just start typing, to add one.", vid.C_GRAY, pk >> 4, 0)
             else
-                void rput(LTX, iso:"Double-click to add an event", vid.C_GRAY, vid.C_WHITE, 0)
+                void rput(LTX, iso:"Double-click to add an event", vid.C_GRAY, pk >> 4, 0)
         }
         vid.render_run(LIST0 + i, 0, 80)
     }
@@ -539,8 +557,8 @@ cv {
     ; ---------------- status bar ----------------
     sub draw_status() {
         ; Quill (theme sprite) sits in columns 0-1
-        rclear(vid.C_WHITE, vid.C_BLACK)
-        void rput(3, status_msg, vid.C_WHITE, vid.C_BLACK, 0)
+        rclear(role(theme.R_STAT))
+        void rputk(3, status_msg, role(theme.R_STAT), 0)
         vid.render_run(STATUS_ROW, 0, 80)
     }
 
@@ -563,10 +581,15 @@ cv {
         iso:"Sync with ownCloud through the X16 Office hub (F1)",
         iso:"Sync conflicts: an event changed on both sides (F3)" ]
 
+    const ubyte TIP_QUILL = 255
     sub show_tip(ubyte id) {
-        if id >= len(tips)
-            id = 0
-        set_status(tips[id])
+        if id == TIP_QUILL
+            set_status(theme.tip)
+        else {
+            if id >= len(tips)
+                id = 0
+            set_status(tips[id])
+        }
         draw_status()
     }
 
@@ -587,37 +610,41 @@ cv {
     }
 
     ; ---------------- dialogs ----------------
+    ; the dialog body's colour
+    sub dbg() -> ubyte {
+        return theme.rl[theme.R_DLG] >> 4
+    }
+
     sub draw_box(ubyte x, ubyte y, ubyte w, ubyte h) {
         ubyte r
         for r in y to y + h - 1
-            vid.fill(x, r, w, 0, vid.C_LGRAY)
-        vid.fill(x, y, w, 0, vid.C_BLACK)
-        vid.fill(x, y + h - 1, w, 0, vid.C_BLACK)
+            vid.fill(x, r, w, 0, dbg())
+        vid.fill(x, y, w, 0, role(theme.R_DLG_EDGE))
+        vid.fill(x, y + h - 1, w, 0, role(theme.R_DLG_EDGE))
     }
 
-    ; Sunset: warnings (bg RED) get a pink title bar with cream text, the rest lavender with BLACK text
+    ; a title bar: warnings (bg RED) in the theme's warning colours, the rest in its title colours
     sub title_box(ubyte x, ubyte y, ubyte w, ubyte h, uword title, ubyte bg) {
-        ubyte fg = vid.C_WHITE
-        if bg != vid.C_RED {
-            bg = vid.C_PURPLE
-            fg = vid.C_BLACK
-        }
+        ubyte k = role(theme.R_DLG_TTL)
+        if bg == vid.C_RED
+            k = role(theme.R_DLG_WARN)
         draw_box(x, y, w, h)
-        vid.fill(x, y, w, fg, bg)
-        vid.text(x + 2, y, title, vid.S_BOLD, fg, bg)
+        vid.fill(x, y, w, k & 15, k >> 4)
+        vid.text(x + 2, y, title, vid.S_BOLD, k & 15, k >> 4)
     }
 
-    ; a dialog button: BLACK on a YELLOW pill, slen(label) + 2 cells
+    ; a dialog button: the theme's pill, slen(label) + 2 cells
     sub button(ubyte x, ubyte y, uword label) {
-        theme.pill(x, y, label, vid.C_BLACK, vid.C_YELLOW, vid.C_LGRAY)
+        ubyte k = role(theme.R_DLG_BTN)
+        theme.pill(x, y, label, k & 15, k >> 4, dbg())
     }
 
     ; Yes / No question about the text in tb; true = yes. The caller redraws the screen.
     sub yesno(uword question) -> bool {
         ubyte k
         title_box(18, 11, 44, 6, iso:"Please confirm", vid.C_RED)
-        put(20, 13, question, 0, vid.C_LGRAY)
-        put(20, 14, &tb, vid.C_BLUE, vid.C_LGRAY)
+        put(20, 13, question, 0, dbg())
+        put(20, 14, &tb, vid.C_BLUE, dbg())
         button(24, 15, iso:" Yes ")
         button(46, 15, iso:" No ")
         prev_btn = true
@@ -661,13 +688,13 @@ cv {
         ubyte y = Y + 4
         ubyte k
         title_box(X, Y, 72, 24, iso:"Sync conflicts", vid.C_PURPLE)
-        put(X + 2, Y + 2, iso:"These events changed on the X16 and in ownCloud since the last sync;", 0, vid.C_LGRAY)
-        put(X + 2, Y + 3, iso:"one version was kept. Acknowledge them to clear the red ! marks.", 0, vid.C_LGRAY)
+        put(X + 2, Y + 2, iso:"These events changed on the X16 and in ownCloud since the last sync;", 0, dbg())
+        put(X + 2, Y + 3, iso:"one version was kept. Acknowledge them to clear the red ! marks.", 0, dbg())
         if lkcal.nconf_got == 0 {
             if cal.count_conflicts() != 0
-                put(X + 2, y + 1, iso:"Click Sync first: the details come from the hub.", vid.C_BLUE, vid.C_LGRAY)
+                put(X + 2, y + 1, iso:"Click Sync first: the details come from the hub.", vid.C_BLUE, dbg())
             else
-                put(X + 2, y + 1, iso:"No conflicts.", vid.C_BLUE, vid.C_LGRAY)
+                put(X + 2, y + 1, iso:"No conflicts.", vid.C_BLUE, dbg())
         } else {
             for i in 0 to lkcal.nconf_got - 1 {
                 if y > Y + 19
@@ -687,11 +714,11 @@ cv {
                     tb[8] = iso:'0' + @(p + 3) / 10
                     tb[9] = iso:'0' + @(p + 3) % 10
                     tb[10] = 0
-                    put(X + 2, y, &tb, vid.C_BLACK, vid.C_LGRAY)
+                    put(X + 2, y, &tb, vid.C_BLACK, dbg())
                     void cal.text_iso(slot, &tb, cal.TXTMAX)
-                    put(X + 14, y, &tb, vid.C_BLUE, vid.C_LGRAY)
+                    put(X + 14, y, &tb, vid.C_BLUE, dbg())
                 } else
-                    put(X + 2, y, iso:"(an event that is not on the X16)", vid.C_BLACK, vid.C_LGRAY)
+                    put(X + 2, y, iso:"(an event that is not on the X16)", vid.C_BLACK, dbg())
                 cb[0] = 0
                 when lkcal.conf_kind[i] {
                     1 -> cb_add(iso:"deleted here, edited in ownCloud: ")
@@ -706,7 +733,7 @@ cv {
                         cb_add(iso:" changed on both; ownCloud had: ")
                     }
                 }
-                put(X + 4, y + 1, &cb, vid.C_DGRAY, vid.C_LGRAY)
+                put(X + 4, y + 1, &cb, vid.C_DGRAY, dbg())
                 if lkcal.conf_kind[i] != 2 {
                     ; the ownCloud value (PETSCII) -> ISO
                     uword t = lkcal.conf_text + (i as uword) * lkcal.CTXT
@@ -716,16 +743,16 @@ cv {
                         k++
                     }
                     tb[k] = 0
-                    put(X + 4 + strings.length(&cb), y + 1, &tb, vid.C_BLACK, vid.C_LGRAY)
+                    put(X + 4 + strings.length(&cb), y + 1, &tb, vid.C_BLACK, dbg())
                 }
                 if lkcal.conf_kept[i] == 0
-                    vid.text(X + 56, y, iso:"kept: X16", vid.S_BOLD, vid.C_RED, vid.C_LGRAY)
+                    vid.text(X + 56, y, iso:"kept: X16", vid.S_BOLD, vid.C_RED, dbg())
                 else
-                    vid.text(X + 56, y, iso:"kept: ownCloud", vid.S_BOLD, vid.C_RED, vid.C_LGRAY)
+                    vid.text(X + 56, y, iso:"kept: ownCloud", vid.S_BOLD, vid.C_RED, dbg())
                 y += 2
             }
             if lkcal.nconf > lkcal.nconf_got
-                put(X + 2, Y + 20, iso:"(more on the hub: python -m x16hub.calsync conflicts)", vid.C_DGRAY, vid.C_LGRAY)
+                put(X + 2, Y + 20, iso:"(more on the hub: python -m x16hub.calsync conflicts)", vid.C_DGRAY, dbg())
         }
         button(X + 2, Y + 22, iso:"Acknowledge all")
         button(X + 22, Y + 22, iso:" Close ")

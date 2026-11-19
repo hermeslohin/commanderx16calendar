@@ -7,7 +7,8 @@
 vid {
     %option ignore_unused
 
-    ; --- palette indexes (Sunset Arcade colours, see theme.p8; written in gfx_init) ---
+    ; --- palette indexes (Sunset Arcade colours written in gfx_init; a theme file replaces them,
+    ;     every index keeping its meaning: see theme.p8) ---
     const ubyte C_BLACK = 0
     const ubyte C_WHITE = 1
     const ubyte C_RED = 2
@@ -36,6 +37,10 @@ vid {
     const ubyte NFONTS = 3
 
     const uword FONT_VRAM = $6000       ; bank 1, $16000 .. 3 fonts of 2 KB
+    ; theme.p8 reads a theme file into this buffer (512 bytes; the calendar uses no other RAM bank
+    ; than 60/61 for X16Link)
+    const ubyte TBANK = 1
+    const uword TBUF = $a000
 
     ; cell composition arrays: filled by the caller, drawn by render_run()
     ubyte[80] r_ch
@@ -81,8 +86,26 @@ vid {
             }
             sys.clear_irqd()
         }
+        ; font slot 3, codes 240..255: the theme's glyphs. Until a theme file brings its own, the
+        ; Sunset ones: title stripe (240), desk stars (241, 242), pill caps (243, 244); the rest blank
+        ubyte i
+        sys.set_irqd()
+        cx16.vaddr(1, FONT_VRAM + 3 * 2048 + 240 * 8, 0, 1)
+        for i in 0 to 127 {
+            slot = 0
+            if i < 40
+                slot = sunset_gl[i]
+            cx16.VERA_DATA0 = slot
+        }
+        sys.clear_irqd()
         cbm.CHROUT($0f)         ; keyboard / console in ISO mode
     }
+    ; stripe, star, star2, left cap, right cap (the same as tools/mkthemes.py's)
+    ubyte[40] sunset_gl = [$ff, $ff, $ff, $dd, $aa, $44, 0, 0,
+                           0, 0, 0, 8, 0, 0, 0, 0,
+                           0, $10, $10, $7c, $10, $10, 0, 0,
+                           $0f, $3f, $7f, $7f, $7f, $7f, $3f, $0f,
+                           $f0, $fc, $fe, $fe, $fe, $fe, $fc, $f0]
 
     sub gfx_init() {
         ubyte i

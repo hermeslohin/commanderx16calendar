@@ -4,15 +4,29 @@ Part of the X16 Office suite, with the look of X16 Write and X16 Sheets: month v
 events per day in the grid, the selected day's events below, and **Sync** with an ownCloud (CalDAV)
 calendar through the X16 Office sync hub.
 
-It wears the suite's "Sunset Arcade" colours (`theme.p8`, the same file in every X16 Office app):
-a pink/orange striped title bar, a plum toolbar with coloured icons, cream day cells on a starry
-night desk, today in yellow, the selected day and event in pink, events as coloured chips. Quill,
-a little pencil, sits at the left end of the status bar and hops after a save or a successful Sync.
-CALENDAR.DAT is unchanged.
+It wears the X16 Office themes (`theme.p8`, the same file in every X16 Office app). The first,
+"Sunset Arcade", is also built in: a pink/orange striped title bar, a plum toolbar with coloured
+icons, cream day cells on a starry night desk, today in yellow, the selected day and event in pink,
+events as coloured chips. Quill, a little pencil, sits at the left end of the status bar and hops
+after a save or a successful Sync. CALENDAR.DAT is unchanged.
+
+## Themes
+
+Six themes come as files: `X16THEME1.BIN` .. `X16THEME6.BIN` (Sunset Arcade, Crayon Desk, Comic
+Book, Beach Hut, Chalkboard, Winter Cabin), written by `tools/mkthemes.py` (the same script in every
+X16 Office repository) into `build/` and copied by `make sd`. **Click Quill** for the next theme.
+The choice is saved in `X16THEME.CFG` (one byte) on the SD card, which X16 Write, X16 Sheets,
+X16 Files and X16 Calendar all read at start, so a theme picked in one app is used by all of them.
+A theme changes the colours of the screen (title bar, toolbar, entry bar, headers, status bar,
+dialogs, the desk and its pattern) and Quill's band; the calendar's own colours keep their meaning
+in every theme: today yellow, the selected day red, other months light grey, coloured event chips,
+a red `!` for a sync conflict. Without theme files Quill stays hidden and the calendar uses the
+built-in Sunset Arcade colours.
 
 Build: `make` (Prog8 12.3.x as `~/prog8c.jar` or `PROG8C=...`, 64tass, Java 11+). That gives
-`build/calendar.prg` and `build/x16link.bin`; the X16Link sources are vendored in `lib/x16link/`
-(see `lib/x16link/VENDORED.md`). `make sd SD=<dir>` copies `CALENDAR.PRG` and `X16LINK.BIN`.
+`build/calendar.prg`, `build/x16link.bin` and the theme files `build/X16THEME1.BIN` .. `6`; the
+X16Link sources are vendored in `lib/x16link/` (see `lib/x16link/VENDORED.md`).
+`make sd SD=<dir>` copies `CALENDAR.PRG`, `X16LINK.BIN` and `X16THEME*.BIN`.
 Run in the emulator: `make run` (needs a mouse), or `make run-modem` with the virtual modem for Sync.
 
 ## Using it
@@ -46,6 +60,11 @@ clears the marks at the next Sync. Details: `FORMAT.md` (CALENDAR.DAT, CALSYNC.D
 * `make cloudtest`: Sync end to end in x16emu with the virtual modem against the hub's link server,
   its real calendar sync engine and an in-memory CalDAV calendar (needs `../x16-office-hub` and its
   venv): push, pull, the hub counter, a conflict, acknowledging it, reload.
+* `make themetest`: the theme files headless: no `X16THEME.CFG` = theme 1 (exactly the built-in
+  colours), clicking Quill goes through all six and back to the first, `X16THEME.CFG` brings the
+  choice back; screenshots of every theme in `build/themetest/month-<n>.png` (month view with
+  events) and `entry-<n>.png` (entry bar and dialogs). Splitting the screenshots needs a Python with
+  Pillow (`PY=...`, default the hub's venv).
 
 `CALENDAR.DAT` in the repo is a one-event sample.
 

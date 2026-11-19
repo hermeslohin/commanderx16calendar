@@ -33,7 +33,8 @@ app {
         vid.load_fonts()
         vid.gfx_init()
         cv.upload_icons()
-        theme.init()
+        theme.init()                    ; the theme from X16THEME.CFG / X16THEMEn.BIN (if any), Quill on
+        cx16.VERA_DC_BORDER = theme.rl[theme.R_BORDER]
         cal.scan_month()
         when ok {
             0 -> cv.set_status(iso:"No CALENDAR.DAT yet - starting a new calendar. Click a day, then type.")
@@ -535,6 +536,8 @@ app {
 
     sub hover(ubyte cx, ubyte cy) {
         ubyte id = cv.find_button(cx, cy)
+        if theme.cur != 0 and theme.on_quill(cx, cy)
+            id = cv.TIP_QUILL
         if id != last_tip {
             last_tip = id
             cv.show_tip(id)
@@ -606,6 +609,15 @@ app {
         ubyte id = cv.find_button(cx, cy)
         if id != 0 {
             do_button(id)
+            return
+        }
+        ; Quill: the next theme (X16THEME.CFG remembers it for all X16 Office apps)
+        if theme.on_quill(cx, cy) {
+            if theme.next() {
+                cv.set_status(theme.msg)
+                cv.redraw_everything()
+                theme.cheer()
+            }
             return
         }
         ; entry bar text: start editing / place the cursor

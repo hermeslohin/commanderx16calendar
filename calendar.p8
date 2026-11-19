@@ -8,7 +8,7 @@
 ;        list row to add an event, double-click an event to edit it, drag an event onto another
 ;        day to move it, wheel over the month = previous / next month. Toolbar: New, Edit, Delete,
 ;        Cut, Copy, Paste, Today, previous / next year and month, Sync with ownCloud, Conflicts.
-;        Quit is at the top right.
+;        Quit is at the top right. Quill (bottom left) = next theme (X16THEME<n>.BIN, X16THEME.CFG).
 ; Keys:  cursor keys move between days, PgUp/PgDn (Ctrl+P/N) change month, Home = today,
 ;        typing starts a new event, Return edits the selected event (or adds one), Tab selects the
 ;        next event, Del deletes it, F1 syncs, F3 shows sync conflicts, Ctrl+X quits.
